@@ -1,74 +1,205 @@
-import { Image, StyleSheet, Platform } from 'react-native';
+// app/(tabs)/index.js
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { 
+  StyleSheet, 
+  View, 
+  Text, 
+  FlatList, 
+  ActivityIndicator,
+  Animated,
+  StatusBar,
+  SafeAreaView,
+  RefreshControl
+} from 'react-native';
+import TodoItem from '../../components/TodoItem';
+import AddTodo from '../../components/AddTodo';
+import TodoService from '../../services/TodoService';
+import { useFocusEffect } from 'expo-router';
+import { useTheme } from '../../contexts/ThemeContext';
 
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
+export default function TodoScreen() {
+  const { theme } = useTheme();
+  const [todos, setTodos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
-export default function HomeScreen() {
+  const loadTodos = async () => {
+    try {
+      const online = await TodoService.isOnline();
+      setIsOnline(online);
+      
+      if (online) {
+        // Try to sync any offline changes
+        await TodoService.syncOfflineChanges();
+      }
+      
+      const todoList = await TodoService.getTodos();
+      setTodos(todoList);
+      setLoading(false);
+      
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }).start();
+    } catch (error) {
+      console.error("Error loading todos:", error);
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadTodos();
+    setRefreshing(false);
+  }, []);
+
+  useEffect(() => {
+    loadTodos();
+  }, []);
+
+  // Reload todos when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadTodos();
+    }, [])
+  );
+
+  if (loading) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: theme.background }]}>
+        <ActivityIndicator size="large" color={theme.accent} />
+        <Text style={[styles.loadingText, { color: theme.accent }]}>Loading your tasks...</Text>
+      </View>
+    );
+  }
+
+  const completedTasks = todos.filter(todo => todo.completed).length;
+  const totalTasks = todos.length;
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12'
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          Tap the Explore tab to learn more about what's included in this starter app.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          When you're ready, run{' '}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
+      <StatusBar barStyle={theme.statusBar} backgroundColor={theme.background} />
+      <Animated.View 
+        style={[
+          styles.container,
+          { opacity: fadeAnim, backgroundColor: theme.background }
+        ]}
+      >
+        <View style={styles.headerSection}>
+          <Text style={[styles.header, { color: theme.textPrimary }]}>My Tasks</Text>
+          {totalTasks > 0 && (
+            <Text style={[styles.statsText, { color: theme.textSecondary }]}>
+              {completedTasks} of {totalTasks} completed
+            </Text>
+          )}
+        </View>
+        
+        {!isOnline && (
+          <View style={[styles.offlineBar, { 
+            backgroundColor: theme.offlineBackground, 
+            borderColor: theme.offlineBorder 
+          }]}>
+            <Text style={[styles.offlineText, { color: theme.offlineText }]}>
+              You're offline. Changes will sync when you're back online.
+            </Text>
+          </View>
+        )}
+        
+        <AddTodo onTodoAdded={loadTodos} />
+        
+        {todos.length > 0 ? (
+          <FlatList
+            data={todos}
+            renderItem={({ item }) => (
+              <TodoItem
+                id={item.id}
+                title={item.title}
+                completed={item.completed}
+                onUpdate={loadTodos}
+              />
+            )}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContainer}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={[theme.accent]}
+                tintColor={theme.accent}
+                progressBackgroundColor={theme.cardBackground}
+              />
+            }
+          />
+        ) : (
+          <View style={styles.emptyContainer}>
+            <Text style={[styles.emptyTitle, { color: theme.accent }]}>All Clear!</Text>
+            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Add your first task above.</Text>
+          </View>
+        )}
+      </Animated.View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  safeArea: {
+    flex: 1,
   },
-  stepContainer: {
-    gap: 8,
+  container: {
+    flex: 1,
+    padding: 20,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12, 
+    fontSize: 16,
+  },
+  headerSection: {
+    marginBottom: 24,
+    marginTop: 12,
+  },
+  header: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  statsText: {
+    fontSize: 16,
+  },
+  listContainer: {
+    paddingBottom: 20,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingBottom: 100,
+  },
+  emptyTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
     marginBottom: 8,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  emptyText: {
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  offlineBar: {
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+  },
+  offlineText: {
+    textAlign: 'center',
+    fontSize: 14,
   },
 });
