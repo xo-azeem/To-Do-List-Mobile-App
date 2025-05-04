@@ -16,6 +16,8 @@ import {
 import { useLocalSearchParams, Stack, router } from 'expo-router';
 import TodoService from '../../services/TodoService';
 import { useTheme } from '../../contexts/ThemeContext';
+import { Formik } from 'formik';
+import * as Yup from 'yup';
 
 export default function TodoDetailsScreen() {
   const { theme } = useTheme();
@@ -142,58 +144,111 @@ export default function TodoDetailsScreen() {
       >
         <ScrollView style={[styles.container, { backgroundColor: theme.background }]}>
           <View style={[styles.card, { backgroundColor: theme.cardBackground, shadowColor: theme.shadow }]}>
-            {isEditing ? (
-              <View style={styles.editForm}>
-                <Text style={[styles.label, { color: theme.textPrimary }]}>Task Title</Text>
-                <TextInput
-                  style={[styles.titleInput, { 
-                    backgroundColor: theme.background, 
-                    borderColor: theme.divider,
-                    color: theme.textPrimary
-                  }]}
-                  value={title}
-                  onChangeText={setTitle}
-                  placeholder="Task title"
-                  placeholderTextColor={theme.textSecondary}
-                />
-                
-                <Text style={[styles.label, { color: theme.textPrimary }]}>Description</Text>
-                <TextInput
-                  style={[styles.descriptionInput, { 
-                    backgroundColor: theme.background, 
-                    borderColor: theme.divider,
-                    color: theme.textPrimary
-                  }]}
-                  value={description}
-                  onChangeText={setDescription}
-                  placeholder="Add a description"
-                  placeholderTextColor={theme.textSecondary}
-                  multiline
-                  numberOfLines={4}
-                  textAlignVertical="top"
-                />
-                
-                <View style={styles.buttonRow}>
-                  <TouchableOpacity 
-                    style={[styles.saveButton, { backgroundColor: theme.success }]} 
-                    onPress={handleSave}
-                  >
-                    <Text style={styles.buttonText}>Save Changes</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={styles.cancelButton} 
-                    onPress={() => {
-                      setTitle(todo.title || '');
-                      setDescription(todo.description || '');
+          {isEditing ? (
+                <Formik
+                  initialValues={{ title, description }}
+                  enableReinitialize
+                  validationSchema={Yup.object({
+                    title: Yup.string()
+                      .required('Title is required')
+                      .min(3, 'Title is too short'),
+                    description: Yup.string()
+                      .max(50, 'Title is too long'),
+                  })}
+                  onSubmit={async (values, { setSubmitting }) => {
+                    try {
+                      await TodoService.updateTodo(id, {
+                        title: values.title,
+                        description: values.description,
+                      });
+                    
+                      setTitle(values.title);
+                      setDescription(values.description);
                       setIsEditing(false);
-                    }}
-                  >
-                    <Text style={styles.buttonText}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
+                      setTodo({
+                        ...todo,
+                        title: values.title,
+                        description: values.description,
+                      });
+                    } catch (error) {
+                      console.error('Error updating todo:', error);
+                    } finally {
+                      setSubmitting(false);
+                    }
+                  }}
+                >
+                  {({ handleChange, handleBlur, handleSubmit, values, errors, touched, isSubmitting }) => (
+                    <View style={styles.editForm}>
+                      <Text style={[styles.label, { color: theme.textPrimary }]}>Task Title</Text>
+                      <TextInput
+                        style={[
+                          styles.titleInput,
+                          {
+                            backgroundColor: theme.background,
+                            borderColor: theme.divider,
+                            color: theme.textPrimary,
+                          },
+                        ]}
+                        value={values.title}
+                        onChangeText={handleChange('title')}
+                        onBlur={handleBlur('title')}
+                        placeholder="Task title"
+                        placeholderTextColor={theme.textSecondary}
+                      />
+                      {touched.title && errors.title && (
+                        <Text style={{ color: theme.error, marginBottom: 8 }}>{errors.title}</Text>
+                      )}
+
+                      <Text style={[styles.label, { color: theme.textPrimary }]}>Description</Text>
+                      <TextInput
+                        style={[
+                          styles.descriptionInput,
+                          {
+                            backgroundColor: theme.background,
+                            borderColor: theme.divider,
+                            color: theme.textPrimary,
+                          },
+                        ]}
+                        value={values.description}
+                        onChangeText={handleChange('description')}
+                        onBlur={handleBlur('description')}
+                        placeholder="Add a description"
+                        placeholderTextColor={theme.textSecondary}
+                        multiline
+                        numberOfLines={4}
+                        textAlignVertical="top"
+                      />
+                      {touched.description && errors.description && (
+                        <Text style={{ color: theme.error, marginBottom: 8 }}>{errors.description}</Text>
+                      )}
+
+                      <View style={styles.buttonRow}>
+                        <TouchableOpacity
+                          style={[styles.saveButton, { backgroundColor: theme.success }]}
+                          onPress={handleSubmit}
+                          disabled={isSubmitting}
+                        >
+                          <Text style={styles.buttonText}>
+                            {isSubmitting ? 'Saving...' : 'Save Changes'}
+                          </Text>
+                        </TouchableOpacity>
+                    
+                        <TouchableOpacity
+                          style={styles.cancelButton}
+                          onPress={() => {
+                            setTitle(todo.title || '');
+                            setDescription(todo.description || '');
+                            setIsEditing(false);
+                          }}
+                        >
+                          <Text style={styles.buttonText}>Cancel</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                </Formik>
+              ) : (
+
               <View>
                 <View style={styles.statusContainer}>
                   <View style={[styles.statusIndicator, 

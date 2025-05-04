@@ -1,13 +1,21 @@
 // components/TodoItem.js
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, TextInput, Animated } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { router } from 'expo-router';
+import { Formik } from 'formik';
+import * as Yup from 'yup';
 import TodoService from '../services/TodoService';
 import { useTheme } from '../contexts/ThemeContext';
 
+const TodoSchema = Yup.object().shape({
+  title: Yup.string()
+    .min(3, 'Task is too short!')
+    .max(50, 'Task is too long!')
+    .required('Task cannot be empty')
+});
+
 const TodoItem = ({ id, title, completed, onUpdate }) => {
   const [isEditing, setIsEditing] = useState(false);
-  const [editedTitle, setEditedTitle] = useState(title);
   const { theme } = useTheme();
 
   const toggleComplete = async () => {
@@ -19,15 +27,15 @@ const TodoItem = ({ id, title, completed, onUpdate }) => {
     }
   };
 
-  const updateTodo = async () => {
-    if (editedTitle.trim() === '') return;
-    
+  const handleUpdateTodo = async (values) => {
     try {
-      await TodoService.updateTodo(id, { title: editedTitle });
+      await TodoSchema.validate(values); // Explicit validation
+      await TodoService.updateTodo(id, { title: values.title });
       setIsEditing(false);
       if (onUpdate) onUpdate();
     } catch (error) {
       console.error("Error updating todo title: ", error);
+      Alert.alert("Validation Error", error.message || "Invalid input");
     }
   };
 
@@ -48,26 +56,50 @@ const TodoItem = ({ id, title, completed, onUpdate }) => {
     return (
       <View style={[styles.itemContainer, { shadowColor: theme.shadow }]}>
         <View style={[styles.item, { backgroundColor: theme.cardBackground }]}>
-          <TextInput
-            style={[styles.input, { 
-              borderColor: theme.inputBorder, 
-              backgroundColor: theme.inputBackground,
-              color: theme.textPrimary
-            }]}
-            value={editedTitle}
-            onChangeText={setEditedTitle}
-            autoFocus
-            placeholder="Edit task..."
-            placeholderTextColor={theme.textSecondary}
-          />
-          <View style={styles.editButtonContainer}>
-            <TouchableOpacity style={[styles.saveButton, { backgroundColor: theme.success }]} onPress={updateTodo}>
-              <Text style={[styles.buttonText, { color: theme.cardBackground }]}>Save</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.cancelButton, { backgroundColor: theme.textSecondary }]} onPress={() => setIsEditing(false)}>
-              <Text style={[styles.buttonText, { color: theme.cardBackground }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
+          <Formik
+            initialValues={{ title: title }}
+            validationSchema={TodoSchema}
+            validateOnMount={false}
+            onSubmit={handleUpdateTodo}
+          >
+            {({ handleChange, handleBlur, handleSubmit, values, errors, touched }) => (
+              <>
+                <TextInput
+                  style={[
+                    styles.input,
+                    {
+                      borderColor: theme.inputBorder,
+                      backgroundColor: theme.inputBackground,
+                      color: theme.textPrimary
+                    }
+                  ]}
+                  value={values.title}
+                  onChangeText={handleChange('title')}
+                  onBlur={handleBlur('title')}
+                  autoFocus
+                  placeholder="Edit task..."
+                  placeholderTextColor={theme.textSecondary}
+                />
+
+                <TouchableOpacity
+                  onPress={handleSubmit}
+                  style={[
+                    styles.saveButton,
+                    { backgroundColor: theme.success }
+                  ]}
+                >
+                  <Text style={[styles.buttonText, { color: theme.cardBackground }]}>Save</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.cancelButton, { backgroundColor: theme.textSecondary }]}
+                  onPress={() => setIsEditing(false)}
+                >
+                  <Text style={[styles.buttonText, { color: theme.cardBackground }]}>Cancel</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </Formik>
         </View>
       </View>
     );
@@ -79,14 +111,14 @@ const TodoItem = ({ id, title, completed, onUpdate }) => {
         <View style={[styles.item, { backgroundColor: theme.cardBackground }]}>
           <TouchableOpacity style={styles.todoInfo} onPress={toggleComplete}>
             <View style={[
-              styles.checkbox, 
+              styles.checkbox,
               { borderColor: theme.accent },
               completed && { backgroundColor: theme.accent }
             ]}>
               {completed && <Text style={[styles.checkmark, { color: theme.cardBackground }]}>✓</Text>}
             </View>
             <Text style={[
-              styles.title, 
+              styles.title,
               { color: theme.textPrimary },
               completed && { textDecorationLine: 'line-through', color: theme.textSecondary }
             ]}>
@@ -150,24 +182,7 @@ const styles = StyleSheet.create({
   buttonContainer: {
     flexDirection: 'row',
   },
-  editButtonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: 10,
-  },
   editButton: {
-    marginHorizontal: 5,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-  },
-  saveButton: {
-    marginHorizontal: 5,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-  },
-  cancelButton: {
     marginHorizontal: 5,
     paddingVertical: 6,
     paddingHorizontal: 12,
@@ -189,6 +204,19 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 8,
     fontSize: 16,
+    marginBottom: 10,
+  },
+  saveButton: {
+    marginHorizontal: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+  },
+  cancelButton: {
+    marginHorizontal: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
   },
 });
 
