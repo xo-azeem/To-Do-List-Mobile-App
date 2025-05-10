@@ -444,3 +444,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 });
+
+// Theme toggle issue
