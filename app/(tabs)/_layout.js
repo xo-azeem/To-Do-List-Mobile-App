@@ -14,7 +14,7 @@ export default function TabsLayout() {
           backgroundColor: theme.tabBarBackground,
           borderTopColor: theme.tabBarBorder,
         },
-        headerShown: false,
+        headerShown: false, // Keep this consistent
       }}
     >
       <Tabs.Screen

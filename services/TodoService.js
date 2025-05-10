@@ -1,33 +1,48 @@
 // services/TodoService.js
-import { collection, addDoc, doc, updateDoc, deleteDoc, query, orderBy, getDocs } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, deleteDoc, query, orderBy, getDocs, where } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '../firebase';
 import NetInfo from '@react-native-community/netinfo';
+import { getAuth } from 'firebase/auth';
 
 const TODOS_STORAGE_KEY = '@todos';
 const LAST_SYNC_KEY = '@lastSync';
 
 class TodoService {
+  // Get current user ID
+  getCurrentUserId() {
+    const auth = getAuth();
+    return auth.currentUser?.uid;
+  }
+
   // Check if device is online
   async isOnline() {
     const netInfo = await NetInfo.fetch();
     return netInfo.isConnected && netInfo.isInternetReachable;
   }
 
-  // Save todos to AsyncStorage
+  // Save todos to AsyncStorage with user ID prefix
   async saveToLocalStorage(todos) {
     try {
-      await AsyncStorage.setItem(TODOS_STORAGE_KEY, JSON.stringify(todos));
-      await AsyncStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
+      const userId = this.getCurrentUserId();
+      if (!userId) return;
+      
+      const storageKey = `${TODOS_STORAGE_KEY}_${userId}`;
+      await AsyncStorage.setItem(storageKey, JSON.stringify(todos));
+      await AsyncStorage.setItem(`${LAST_SYNC_KEY}_${userId}`, new Date().toISOString());
     } catch (error) {
       console.error('Error saving todos to AsyncStorage:', error);
     }
   }
 
-  // Get todos from AsyncStorage
+  // Get todos from AsyncStorage for current user
   async getFromLocalStorage() {
     try {
-      const todosJson = await AsyncStorage.getItem(TODOS_STORAGE_KEY);
+      const userId = this.getCurrentUserId();
+      if (!userId) return [];
+      
+      const storageKey = `${TODOS_STORAGE_KEY}_${userId}`;
+      const todosJson = await AsyncStorage.getItem(storageKey);
       return todosJson ? JSON.parse(todosJson) : [];
     } catch (error) {
       console.error('Error getting todos from AsyncStorage:', error);
@@ -38,11 +53,19 @@ class TodoService {
   // Get todos (from Firestore if online, otherwise from AsyncStorage)
   async getTodos() {
     try {
+      const userId = this.getCurrentUserId();
+      if (!userId) return [];
+      
       const isOnline = await this.isOnline();
       
       if (isOnline) {
-        // Get from Firestore
-        const q = query(collection(db, 'todos'), orderBy('createdAt', 'desc'));
+        // Get from Firestore - filter by current user
+        const q = query(
+          collection(db, 'todos'), 
+          where('userId', '==', userId),
+          orderBy('createdAt', 'desc')
+        );
+        
         const querySnapshot = await getDocs(q);
         const todoList = [];
         
@@ -71,12 +94,16 @@ class TodoService {
   // Add a new todo
   async addTodo(title) {
     try {
+      const userId = this.getCurrentUserId();
+      if (!userId) throw new Error('User not authenticated');
+      
       const isOnline = await this.isOnline();
       const newTodo = {
         title,
         completed: false,
         createdAt: new Date(),
         description: '',
+        userId: userId, // Associate todo with current user
       };
       
       if (isOnline) {
@@ -108,6 +135,9 @@ class TodoService {
   // Update a todo
   async updateTodo(id, updates) {
     try {
+      const userId = this.getCurrentUserId();
+      if (!userId) throw new Error('User not authenticated');
+      
       const isOnline = await this.isOnline();
       
       if (isOnline && !id.startsWith('local_')) {
@@ -136,6 +166,9 @@ class TodoService {
   // Delete a todo
   async deleteTodo(id) {
     try {
+      const userId = this.getCurrentUserId();
+      if (!userId) throw new Error('User not authenticated');
+      
       const isOnline = await this.isOnline();
       
       if (isOnline && !id.startsWith('local_')) {
@@ -157,6 +190,9 @@ class TodoService {
   // Get a single todo by ID
   async getTodoById(id) {
     try {
+      const userId = this.getCurrentUserId();
+      if (!userId) throw new Error('User not authenticated');
+      
       const todos = await this.getFromLocalStorage();
       return todos.find(todo => todo.id === id) || null;
     } catch (error) {
@@ -168,6 +204,9 @@ class TodoService {
   // Sync pending offline changes when back online
   async syncOfflineChanges() {
     try {
+      const userId = this.getCurrentUserId();
+      if (!userId) return;
+      
       const isOnline = await this.isOnline();
       if (!isOnline) return;
       
@@ -178,6 +217,12 @@ class TodoService {
         if (todo.id.startsWith('local_')) {
           // New todo that was created offline
           const { id, pendingSync, ...todoData } = todo;
+          
+          // Ensure userId is included
+          if (!todoData.userId) {
+            todoData.userId = userId;
+          }
+          
           const docRef = await addDoc(collection(db, 'todos'), todoData);
           
           // Update the local copy with the new Firestore ID
