@@ -23,6 +23,7 @@ export const lightTheme = {
   shadow: '#000',
   tabBarBackground: '#FFFFFF',
   tabBarBorder: '#E0E0E0',
+  buttonBackground: '#E2E8F0',
 };
 
 // Define dark theme colors
@@ -45,6 +46,7 @@ export const darkTheme = {
   shadow: '#000',
   tabBarBackground: '#1E1E1E',
   tabBarBorder: '#333333',
+  buttonBackground: '#2D3748',
 };
 
 // Create the theme context
