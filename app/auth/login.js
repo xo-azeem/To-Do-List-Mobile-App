@@ -15,11 +15,13 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { getUserProfile } from '../../services/UserService';
+import { useTheme } from '../../contexts/ThemeContext';
 
 export default function LoginScreen() {
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const { theme } = useTheme();
   
   // Import Firebase auth inside component to avoid initialization issues
   const [auth, setAuth] = useState(null);
@@ -117,12 +119,12 @@ export default function LoginScreen() {
   const handleForgotPassword = () => router.push('/auth/forgot-password');
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f9f9f9" />
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+      <StatusBar barStyle={theme.statusBar} backgroundColor={theme.background} />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView}>
         <View style={styles.logoContainer}>
-          <Text style={styles.appTitle}>TaskMaster</Text>
-          <Text style={styles.appSubtitle}>Manage your tasks effortlessly</Text>
+          <Text style={[styles.appTitle, { color: theme.accent }]}>TaskMaster</Text>
+          <Text style={[styles.appSubtitle, { color: theme.textSecondary }]}>Manage your tasks effortlessly</Text>
         </View>
 
         <View style={styles.formContainer}>
@@ -130,33 +132,41 @@ export default function LoginScreen() {
             placeholder="Email"
             value={form.email}
             onChangeText={(text) => updateForm('email', text)}
-            style={styles.input}
+            style={[styles.input, { 
+              backgroundColor: theme.cardBackground, 
+              borderColor: theme.inputBorder,
+              color: theme.textPrimary
+            }]}
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
-            placeholderTextColor="#95A5A6"
+            placeholderTextColor={theme.textSecondary}
           />
 
           <TextInput
             placeholder="Password"
             value={form.password}
             onChangeText={(text) => updateForm('password', text)}
-            style={styles.input}
+            style={[styles.input, { 
+              backgroundColor: theme.cardBackground, 
+              borderColor: theme.inputBorder,
+              color: theme.textPrimary
+            }]}
             secureTextEntry
-            placeholderTextColor="#95A5A6"
+            placeholderTextColor={theme.textSecondary}
           />
 
           <TouchableOpacity onPress={handleForgotPassword}>
-            <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+            <Text style={[styles.forgotPasswordText, { color: theme.accent }]}>Forgot Password?</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.loginButton} onPress={handleLogin} disabled={loading} accessibilityLabel="Login">
+          <TouchableOpacity style={[styles.loginButton, { backgroundColor: theme.accent }]} onPress={handleLogin} disabled={loading} accessibilityLabel="Login">
             {loading ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.loginButtonText}>Login</Text>}
           </TouchableOpacity>
 
           <TouchableOpacity onPress={handleSignUpPress} style={styles.signupContainer}>
-            <Text style={styles.signupText}>
-              Don't have an account? <Text style={styles.signupLink}>Sign Up</Text>
+            <Text style={[styles.signupText, { color: theme.textSecondary }]}>
+              Don't have an account? <Text style={[styles.signupLink, { color: theme.accent }]}>Sign Up</Text>
             </Text>
           </TouchableOpacity>
         </View>
@@ -168,7 +178,6 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9f9f9',
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   keyboardView: {
@@ -183,12 +192,10 @@ const styles = StyleSheet.create({
   appTitle: {
     fontSize: 36,
     fontWeight: 'bold',
-    color: '#4A6FA5',
     marginBottom: 10,
   },
   appSubtitle: {
     fontSize: 18,
-    color: '#6B7280',
     letterSpacing: 0.3,
   },
   formContainer: {
@@ -196,12 +203,10 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   input: {
-    backgroundColor: '#fff',
     padding: 16,
     borderRadius: 12,
     marginBottom: 18,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
     fontSize: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -210,7 +215,6 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   loginButton: {
-    backgroundColor: '#4A6FA5',
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
@@ -230,7 +234,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     marginTop: 5,
     marginBottom: 5,
-    color: '#4A6FA5',
     fontSize: 14,
     fontWeight: '500',
   },
@@ -240,11 +243,9 @@ const styles = StyleSheet.create({
   signupText: {
     textAlign: 'center',
     marginTop: 24,
-    color: '#6B7280',
     fontSize: 16,
   },
   signupLink: {
-    color: '#4A6FA5',
     fontWeight: 'bold',
   },
 });
