@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '../firebase';
 import NetInfo from '@react-native-community/netinfo';
 import { getAuth } from 'firebase/auth';
+import CloudinaryService from './CloudinaryService';
 
 const TODOS_STORAGE_KEY = '@todos';
 const LAST_SYNC_KEY = '@lastSync';
@@ -91,8 +92,8 @@ class TodoService {
     }
   }
 
-  // Add a new todo
-  async addTodo(title) {
+  // Add a new todo with optional document
+  async addTodo(title, documentUri = null) {
     try {
       const userId = this.getCurrentUserId();
       if (!userId) throw new Error('User not authenticated');
@@ -104,12 +105,38 @@ class TodoService {
         createdAt: new Date(),
         description: '',
         userId: userId, // Associate todo with current user
+        documentUrl: null,
+        documentId: null
       };
+      
+      // Handle document upload if provided
+      if (documentUri && isOnline) {
+        // Create a temporary ID for the todo to use in the document upload
+        const tempId = 'temp_' + new Date().getTime();
+        
+        // Upload document to Cloudinary
+        const uploadResult = await CloudinaryService.uploadDocument(documentUri, tempId);
+        
+        // Add document information to the todo
+        if (uploadResult) {
+          newTodo.documentUrl = uploadResult.url;
+          newTodo.documentId = uploadResult.publicId;
+        }
+      }
       
       if (isOnline) {
         // Add to Firestore
         const docRef = await addDoc(collection(db, 'todos'), newTodo);
         newTodo.id = docRef.id;
+        
+        // If we uploaded a document with a temporary ID, update the document ID in Cloudinary
+        if (documentUri && newTodo.documentId && newTodo.documentId.includes('temp_')) {
+          // Re-upload with correct ID or update the metadata - depends on Cloudinary implementation
+          // For simplicity, we'll just keep the original upload in this example
+          
+          // In a real implementation, you might want to rename or update the publicId
+          // through Cloudinary's API or re-upload with the correct ID
+        }
         
         // Update local storage
         const todos = await this.getFromLocalStorage();
@@ -119,6 +146,11 @@ class TodoService {
         // Add to local storage only with a temporary ID
         newTodo.id = 'local_' + new Date().getTime();
         newTodo.pendingSync = true;
+        
+        // If document was provided but we're offline, save the uri for later upload
+        if (documentUri) {
+          newTodo.pendingDocumentUri = documentUri;
+        }
         
         const todos = await this.getFromLocalStorage();
         todos.unshift(newTodo);
@@ -133,24 +165,46 @@ class TodoService {
   }
 
   // Update a todo
-  async updateTodo(id, updates) {
+  async updateTodo(id, updates, documentUri = null) {
     try {
       const userId = this.getCurrentUserId();
       if (!userId) throw new Error('User not authenticated');
       
       const isOnline = await this.isOnline();
+      const updatedData = { ...updates };
+      
+      // Handle document upload if provided
+      if (documentUri && isOnline) {
+        // Upload document to Cloudinary
+        const uploadResult = await CloudinaryService.uploadDocument(documentUri, id);
+        
+        // Add document information to the todo
+        if (uploadResult) {
+          updatedData.documentUrl = uploadResult.url;
+          updatedData.documentId = uploadResult.publicId;
+        }
+      }
       
       if (isOnline && !id.startsWith('local_')) {
         // Update in Firestore
         const todoRef = doc(db, 'todos', id);
-        await updateDoc(todoRef, updates);
+        await updateDoc(todoRef, updatedData);
       }
       
       // Update in local storage
       const todos = await this.getFromLocalStorage();
       const updatedTodos = todos.map(todo => {
         if (todo.id === id) {
-          return { ...todo, ...updates, pendingSync: !isOnline || id.startsWith('local_') };
+          // If document was provided but we're offline, save the uri for later upload
+          if (documentUri && !isOnline) {
+            updatedData.pendingDocumentUri = documentUri;
+          }
+          
+          return { 
+            ...todo, 
+            ...updatedData, 
+            pendingSync: !isOnline || id.startsWith('local_') 
+          };
         }
         return todo;
       });
@@ -171,13 +225,26 @@ class TodoService {
       
       const isOnline = await this.isOnline();
       
+      // Get the todo to check if it has a document
+      const todos = await this.getFromLocalStorage();
+      const todoToDelete = todos.find(todo => todo.id === id);
+      
       if (isOnline && !id.startsWith('local_')) {
         // Delete from Firestore
         await deleteDoc(doc(db, 'todos', id));
+        
+        // If there's an associated document, delete it from Cloudinary too
+        if (todoToDelete && todoToDelete.documentId) {
+          try {
+            await CloudinaryService.deleteDocument(todoToDelete.documentId);
+          } catch (docError) {
+            console.error('Error deleting document from Cloudinary:', docError);
+            // Continue with the todo deletion even if document deletion fails
+          }
+        }
       }
       
       // Delete from local storage
-      const todos = await this.getFromLocalStorage();
       const filteredTodos = todos.filter(todo => todo.id !== id);
       await this.saveToLocalStorage(filteredTodos);
       return filteredTodos;
@@ -214,9 +281,34 @@ class TodoService {
       const pendingTodos = todos.filter(todo => todo.pendingSync);
       
       for (const todo of pendingTodos) {
+        // Handle document upload if there's a pending document
+        if (todo.pendingDocumentUri) {
+          try {
+            // For local todos that will get a new ID, use a temporary ID for upload
+            const uploadId = todo.id.startsWith('local_') ? 
+              'temp_' + new Date().getTime() : todo.id;
+            
+            const uploadResult = await CloudinaryService.uploadDocument(
+              todo.pendingDocumentUri, 
+              uploadId
+            );
+            
+            if (uploadResult) {
+              todo.documentUrl = uploadResult.url;
+              todo.documentId = uploadResult.publicId;
+            }
+            
+            // Remove pendingDocumentUri after successful upload
+            delete todo.pendingDocumentUri;
+          } catch (docError) {
+            console.error('Error uploading pending document:', docError);
+            // Continue with todo sync even if document upload fails
+          }
+        }
+        
         if (todo.id.startsWith('local_')) {
           // New todo that was created offline
-          const { id, pendingSync, ...todoData } = todo;
+          const { id, pendingSync, pendingDocumentUri, ...todoData } = todo;
           
           // Ensure userId is included
           if (!todoData.userId) {
@@ -225,20 +317,23 @@ class TodoService {
           
           const docRef = await addDoc(collection(db, 'todos'), todoData);
           
+          // If we uploaded a document with a temporary ID, we need to update it
+          // In a real implementation, you would update the document ID in Cloudinary
+          
           // Update the local copy with the new Firestore ID
           const updatedTodos = todos.map(t => 
-            t.id === id ? { ...todo, id: docRef.id, pendingSync: false } : t
+            t.id === id ? { ...todo, id: docRef.id, pendingSync: false, pendingDocumentUri: undefined } : t
           );
           await this.saveToLocalStorage(updatedTodos);
         } else {
           // Existing todo that was updated offline
-          const { pendingSync, ...todoData } = todo;
+          const { pendingSync, pendingDocumentUri, ...todoData } = todo;
           const todoRef = doc(db, 'todos', todo.id);
           await updateDoc(todoRef, todoData);
           
           // Mark as synced
           const updatedTodos = todos.map(t => 
-            t.id === todo.id ? { ...todo, pendingSync: false } : t
+            t.id === todo.id ? { ...todo, pendingSync: false, pendingDocumentUri: undefined } : t
           );
           await this.saveToLocalStorage(updatedTodos);
         }
