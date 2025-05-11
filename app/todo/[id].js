@@ -11,13 +11,18 @@ import {
   SafeAreaView,
   KeyboardAvoidingView,
   Platform,
-  StatusBar
+  StatusBar,
+  Linking,
+  Alert
 } from 'react-native';
 import { useLocalSearchParams, Stack, router } from 'expo-router';
 import TodoService from '../../services/TodoService';
+import CloudinaryService from '../../services/CloudinaryService';
 import { useTheme } from '../../contexts/ThemeContext';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
+import { AntDesign, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
 
 export default function TodoDetailsScreen() {
   const { theme } = useTheme();
@@ -27,6 +32,9 @@ export default function TodoDetailsScreen() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [isEditing, setIsEditing] = useState(false);
+  const [document, setDocument] = useState(null);
+  const [documentName, setDocumentName] = useState('');
+  const [uploadingDocument, setUploadingDocument] = useState(false);
 
   useEffect(() => {
     const loadTodo = async () => {
@@ -89,6 +97,185 @@ export default function TodoDetailsScreen() {
       router.back();
     } catch (error) {
       console.error('Error deleting todo:', error);
+    }
+  };
+
+  const openDocument = async () => {
+    if (todo.documentUrl) {
+      try {
+        const canOpen = await Linking.canOpenURL(todo.documentUrl);
+        if (canOpen) {
+          await Linking.openURL(todo.documentUrl);
+        } else {
+          Alert.alert(
+            "Cannot Open Document",
+            "Your device doesn't have an app that can open this type of document."
+          );
+        }
+      } catch (error) {
+        console.error("Error opening document:", error);
+        Alert.alert("Error", "Failed to open document");
+      }
+    }
+  };
+
+  const pickDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*', 'application/msword', 
+               'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+               'text/plain'],
+        copyToCacheDirectory: true
+      });
+      
+      // DocumentPicker behavior changed in newer Expo versions
+      if (result.canceled === false && result.assets && result.assets[0]) {
+        const file = result.assets[0];
+        setDocument(file.uri);
+        setDocumentName(file.name);
+      } else if (result.type === 'success') {
+        // For backward compatibility
+        setDocument(result.uri);
+        setDocumentName(result.name);
+      }
+    } catch (error) {
+      console.error("Error picking document:", error);
+      Alert.alert("Error", "Failed to select document.");
+    }
+  };
+
+  const clearDocument = () => {
+    setDocument(null);
+    setDocumentName('');
+  };
+
+  const attachDocument = async () => {
+    if (!document) {
+      Alert.alert("Error", "Please select a document first");
+      return;
+    }
+
+    try {
+      setUploadingDocument(true);
+      
+      // Upload the document to Cloudinary and update the todo
+      const updatedTodos = await TodoService.updateTodo(id, {}, document);
+      
+      // Refresh todo data
+      const updatedTodo = await TodoService.getTodoById(id);
+      setTodo(updatedTodo);
+      
+      // Clear the document selection
+      setDocument(null);
+      setDocumentName('');
+      
+      Alert.alert("Success", "Document attached successfully");
+    } catch (error) {
+      console.error("Error attaching document:", error);
+      Alert.alert("Error", "Failed to attach document. Please try again.");
+    } finally {
+      setUploadingDocument(false);
+    }
+  };
+
+  const deleteDocument = async () => {
+    if (!todo.documentUrl || !todo.documentId) {
+      return;
+    }
+
+    Alert.alert(
+      "Delete Document",
+      "Are you sure you want to delete the attached document?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              // Update todo to remove document reference
+              await TodoService.updateTodo(id, {
+                documentUrl: null,
+                documentId: null
+              });
+              
+              // Try to delete from Cloudinary (might not work directly, as noted in CloudinaryService)
+              if (todo.documentId) {
+                try {
+                  await CloudinaryService.deleteDocument(todo.documentId);
+                } catch (cloudinaryError) {
+                  console.warn("Couldn't delete document from Cloudinary:", cloudinaryError);
+                  // Continue anyway since we've removed the reference from the todo
+                }
+              }
+              
+              // Update local state
+              setTodo({
+                ...todo,
+                documentUrl: null,
+                documentId: null
+              });
+              
+              Alert.alert("Success", "Document removed successfully");
+            } catch (error) {
+              console.error("Error removing document:", error);
+              Alert.alert("Error", "Failed to remove document");
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const getDocumentFileName = () => {
+    if (!todo.documentUrl) return "";
+    
+    // Extract filename from URL
+    const urlParts = todo.documentUrl.split('/');
+    let fileName = urlParts[urlParts.length - 1];
+    
+    // Remove any query parameters
+    fileName = fileName.split('?')[0];
+    
+    // Decode URI components
+    try {
+      fileName = decodeURIComponent(fileName);
+    } catch (e) {
+      // If decoding fails, use the encoded version
+    }
+    
+    return fileName;
+  };
+
+  const getDocumentType = () => {
+    if (!todo.documentUrl) return "file";
+    
+    const url = todo.documentUrl.toLowerCase();
+    
+    if (url.includes('.pdf')) return "pdf";
+    else if (url.includes('.doc') || url.includes('.docx')) return "word";
+    else if (url.includes('.jpg') || url.includes('.jpeg') || url.includes('.png') || url.includes('.gif')) return "image";
+    else if (url.includes('.txt')) return "text";
+    else return "file";
+  };
+
+  const renderDocumentIcon = () => {
+    const docType = getDocumentType();
+    
+    switch (docType) {
+      case "pdf":
+        return <AntDesign name="pdffile1" size={24} color={theme.accent} />;
+      case "word":
+        return <MaterialCommunityIcons name="file-word" size={24} color={theme.accent} />;
+      case "image":
+        return <AntDesign name="picture" size={24} color={theme.accent} />;
+      case "text":
+        return <AntDesign name="filetext1" size={24} color={theme.accent} />;
+      default:
+        return <AntDesign name="file1" size={24} color={theme.accent} />;
     }
   };
 
@@ -269,6 +456,104 @@ export default function TodoDetailsScreen() {
                 <Text style={[styles.description, { color: theme.textPrimary }]}>
                   {todo.description ? todo.description : 'No description added.'}
                 </Text>
+                
+                <View style={[styles.divider, { backgroundColor: theme.divider }]} />
+                
+                {/* Document Section */}
+                <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>Document</Text>
+                
+                {todo.documentUrl ? (
+                  <View style={styles.documentContainer}>
+                    <View style={[styles.documentBox, { 
+                      borderColor: theme.divider,
+                      backgroundColor: theme.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'
+                    }]}>
+                      <View style={styles.documentInfo}>
+                        {renderDocumentIcon()}
+                        <Text style={[styles.documentName, { color: theme.textPrimary }]} numberOfLines={1}>
+                          {getDocumentFileName()}
+                        </Text>
+                      </View>
+                      
+                      <View style={styles.documentActions}>
+                        <TouchableOpacity 
+                          style={[styles.documentButton, { backgroundColor: theme.accent }]} 
+                          onPress={openDocument}
+                        >
+                          <Text style={styles.documentButtonText}>View</Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity 
+                          style={[styles.documentButton, { backgroundColor: theme.error }]} 
+                          onPress={deleteDocument}
+                        >
+                          <Text style={styles.documentButtonText}>Remove</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                ) : (
+                  <View>
+                    <Text style={[styles.noDocumentText, { color: theme.textSecondary }]}>
+                      No document attached.
+                    </Text>
+                    
+                    {!document ? (
+                      <TouchableOpacity 
+                        style={[
+                          styles.attachButton,
+                          {
+                            backgroundColor: theme.buttonBackground, // Use the new theme property
+                            borderColor: theme.divider,
+                          },
+                        ]}
+                        onPress={pickDocument}
+                      >
+                        <AntDesign name="paperclip" size={20} color={theme.accent} />
+                        <Text style={[styles.attachButtonText, { color: theme.textPrimary }]}>
+                          Attach Document
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View>
+                        <View style={[styles.selectedDocumentContainer, { 
+                          backgroundColor: theme.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                          borderColor: theme.divider
+                        }]}>
+                          <View style={styles.selectedDocument}>
+                            <AntDesign name="file1" size={18} color={theme.accent} />
+                            <Text style={[styles.documentName, { color: theme.textPrimary }]} numberOfLines={1}>
+                              {documentName}
+                            </Text>
+                          </View>
+                          <TouchableOpacity onPress={clearDocument}>
+                            <AntDesign name="close" size={18} color={theme.error} />
+                          </TouchableOpacity>
+                        </View>
+                        
+                        <View style={styles.documentActionRow}>
+                          <TouchableOpacity 
+                            style={[styles.uploadButton, { backgroundColor: theme.accent }]} 
+                            onPress={attachDocument}
+                            disabled={uploadingDocument}
+                          >
+                            <Text style={styles.buttonText}>
+                              {uploadingDocument ? 'Uploading...' : 'Upload Document'}
+                            </Text>
+                          </TouchableOpacity>
+                          
+                          <TouchableOpacity 
+                            style={[styles.cancelUploadButton, { backgroundColor: theme.textSecondary }]}
+                            onPress={clearDocument}
+                            disabled={uploadingDocument}
+                          >
+                            <Text style={styles.buttonText}>Cancel</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                )}
                 
                 <View style={[styles.divider, { backgroundColor: theme.divider }]} />
                 
@@ -465,5 +750,92 @@ const styles = StyleSheet.create({
     height: 120,
     textAlignVertical: 'top',
     marginBottom: 16,
+  },
+  // Document section styles
+  documentContainer: {
+    marginBottom: 16,
+  },
+  documentBox: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  documentInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  documentName: {
+    fontSize: 16,
+    marginLeft: 12,
+    flex: 1,
+  },
+  documentActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  documentButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  documentButtonText: {
+    color: '#fff',
+    fontWeight: '500',
+  },
+  noDocumentText: {
+    fontSize: 16,
+    fontStyle: 'italic',
+    marginBottom: 12,
+  },
+  attachButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 16,
+    justifyContent: 'center',
+  },
+  attachButtonText: {
+    marginLeft: 8,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  selectedDocumentContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  selectedDocument: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  documentActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  uploadButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginRight: 8,
+    alignItems: 'center',
+  },
+  cancelUploadButton: {
+    flex: 0.5,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
   }
 });

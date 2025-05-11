@@ -4,6 +4,7 @@ import { StyleSheet, Text, View, TouchableOpacity, TextInput, Alert } from 'reac
 import { router } from 'expo-router';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
+import { AntDesign } from '@expo/vector-icons';
 import TodoService from '../services/TodoService';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -14,7 +15,7 @@ const TodoSchema = Yup.object().shape({
     .required('Task cannot be empty')
 });
 
-const TodoItem = ({ id, title, completed, onUpdate }) => {
+const TodoItem = ({ id, title, completed, documentUrl, onUpdate }) => {
   const [isEditing, setIsEditing] = useState(false);
   const { theme } = useTheme();
 
@@ -109,29 +110,43 @@ const TodoItem = ({ id, title, completed, onUpdate }) => {
     <View style={[styles.itemContainer, { shadowColor: theme.shadow }]}>
       <TouchableOpacity onPress={navigateToDetails} activeOpacity={0.8}>
         <View style={[styles.item, { backgroundColor: theme.cardBackground }]}>
-          <TouchableOpacity style={styles.todoInfo} onPress={toggleComplete}>
-            <View style={[
-              styles.checkbox,
-              { borderColor: theme.accent },
-              completed && { backgroundColor: theme.accent }
-            ]}>
-              {completed && <Text style={[styles.checkmark, { color: theme.cardBackground }]}>✓</Text>}
+          <View style={styles.mainContent}>
+            <TouchableOpacity style={styles.todoInfo} onPress={toggleComplete}>
+              <View style={[
+                styles.checkbox,
+                { borderColor: theme.accent },
+                completed && { backgroundColor: theme.accent }
+              ]}>
+                {completed && <Text style={[styles.checkmark, { color: theme.cardBackground }]}>✓</Text>}
+              </View>
+              <View style={styles.titleContainer}>
+                <Text style={[
+                  styles.title,
+                  { color: theme.textPrimary },
+                  completed && { textDecorationLine: 'line-through', color: theme.textSecondary }
+                ]}>
+                  {title}
+                </Text>
+                
+                {documentUrl && (
+                  <View style={styles.documentIndicator}>
+                    <AntDesign name="paperclip" size={14} color={theme.accent} />
+                    <Text style={[styles.documentText, { color: theme.accent }]}>
+                      Has attachment
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
+            
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity style={[styles.editButton, { backgroundColor: theme.accent }]} onPress={() => setIsEditing(true)}>
+                <Text style={[styles.buttonText, { color: theme.cardBackground }]}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.deleteButton, { backgroundColor: theme.error }]} onPress={deleteTodo}>
+                <Text style={[styles.buttonText, { color: theme.cardBackground }]}>Delete</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={[
-              styles.title,
-              { color: theme.textPrimary },
-              completed && { textDecorationLine: 'line-through', color: theme.textSecondary }
-            ]}>
-              {title}
-            </Text>
-          </TouchableOpacity>
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity style={[styles.editButton, { backgroundColor: theme.accent }]} onPress={() => setIsEditing(true)}>
-              <Text style={[styles.buttonText, { color: theme.cardBackground }]}>Edit</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.deleteButton, { backgroundColor: theme.error }]} onPress={deleteTodo}>
-              <Text style={[styles.buttonText, { color: theme.cardBackground }]}>Delete</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </TouchableOpacity>
@@ -152,6 +167,8 @@ const styles = StyleSheet.create({
   item: {
     padding: 16,
     borderRadius: 12,
+  },
+  mainContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -160,6 +177,9 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  titleContainer: {
+    flex: 1,
   },
   checkbox: {
     width: 24,
@@ -176,7 +196,16 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 16,
-    flex: 1,
+    fontWeight: '500',
+  },
+  documentIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 5,
+  },
+  documentText: {
+    fontSize: 12,
+    marginLeft: 4,
     fontWeight: '500',
   },
   buttonContainer: {

@@ -1,7 +1,18 @@
-import React from 'react';
-import { StyleSheet, View, TextInput, TouchableOpacity, Text, Alert } from 'react-native';
+import React, { useState } from 'react';
+import { 
+  StyleSheet, 
+  View, 
+  TextInput, 
+  TouchableOpacity, 
+  Text, 
+  Alert,
+  Platform,
+  Image
+} from 'react-native';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
+import * as DocumentPicker from 'expo-document-picker';
+import { AntDesign } from '@expo/vector-icons';
 import TodoService from '../services/TodoService';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -14,11 +25,45 @@ const TodoSchema = Yup.object().shape({
 
 const AddTodo = ({ onTodoAdded }) => {
   const { theme } = useTheme();
+  const [document, setDocument] = useState(null);
+  const [documentName, setDocumentName] = useState('');
+
+  const pickDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*', 'application/msword', 
+               'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+               'text/plain'],
+        copyToCacheDirectory: true
+      });
+      
+      // DocumentPicker behavior changed in newer Expo versions
+      if (result.canceled === false && result.assets && result.assets[0]) {
+        const file = result.assets[0];
+        setDocument(file.uri);
+        setDocumentName(file.name);
+      } else if (result.type === 'success') {
+        // For backward compatibility
+        setDocument(result.uri);
+        setDocumentName(result.name);
+      }
+    } catch (error) {
+      console.error("Error picking document:", error);
+      Alert.alert("Error", "Failed to select document.");
+    }
+  };
+
+  const clearDocument = () => {
+    setDocument(null);
+    setDocumentName('');
+  };
 
   const handleAddTodo = async (values, { resetForm }) => {
     try {
-      await TodoService.addTodo(values.title);
+      await TodoService.addTodo(values.title, document);
       resetForm();
+      setDocument(null);
+      setDocumentName('');
       if (onTodoAdded) onTodoAdded();
     } catch (error) {
       console.error("Error adding todo: ", error);
@@ -55,6 +100,37 @@ const AddTodo = ({ onTodoAdded }) => {
               onBlur={handleBlur('title')}
             />
 
+            {/* Document attachment section */}
+            <View style={styles.documentSection}>
+              <TouchableOpacity
+                style={[
+                  styles.documentButton,
+                  { 
+                    backgroundColor: theme.inputBackground,
+                    borderColor: theme.divider
+                  }
+                ]}
+                onPress={pickDocument}
+              >
+                <AntDesign name="paperclip" size={20} color={theme.accent} />
+                <Text style={[styles.documentButtonText, { color: theme.textPrimary }]}>
+                  {document ? 'Change Document' : 'Attach Document'}
+                </Text>
+              </TouchableOpacity>
+              {document && (
+                <View style={styles.selectedDocumentContainer}>
+                  <View style={styles.selectedDocument}>
+                    <AntDesign name="file1" size={18} color={theme.accent} />
+                    <Text style={[styles.documentName, { color: theme.textPrimary }]} numberOfLines={1}>
+                      {documentName}
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={clearDocument}>
+                    <AntDesign name="close" size={18} color={theme.error} />
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
             <TouchableOpacity 
               style={[
                 styles.addButton,
@@ -100,6 +176,41 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderRadius: 8,
     borderWidth: 1,
+  },
+  documentSection: {
+    marginVertical: 8,
+  },
+  documentButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  documentButtonText: {
+    marginLeft: 8,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  selectedDocumentContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+  },
+  selectedDocument: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  documentName: {
+    marginLeft: 6,
+    fontSize: 14,
+    flex: 1,
   },
   addButton: {
     height: 45,
