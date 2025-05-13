@@ -1,0 +1,39 @@
+```
+└── 📁firebase-todo-app
+    └── 📁app
+        └── _layout.js
+        └── 📁(tabs)
+            └── _layout.js
+            └── index.tsx
+            └── settings.js
+            └── stats.js
+        └── 📁auth
+            └── _layout.js
+            └── forgot-password.js
+            └── index.js
+            └── login.js
+            └── signup.js
+        └── index.js
+        └── 📁todo
+            └── _layout.js
+            └── [id].js
+    └── 📁components
+        └── AddTodo.js
+        └── TodoItem.js
+    └── 📁contexts
+        └── AuthContext.js
+        └── ThemeContext.js
+    └── 📁services
+        └── CloudinaryService.js
+        └── TodoService.js
+        └── UserService.js
+    └── .env
+    └── .gitignore
+    └── app.json
+    └── expo-env.d.ts
+    └── firebase.js
+    └── package-lock.json
+    └── package.json
+    └── README.md
+    └── tsconfig.json
+```
